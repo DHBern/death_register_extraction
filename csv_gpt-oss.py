@@ -222,11 +222,11 @@ def main_llm(df):
     df["Geburtsdatum"] = [data["Geburtsdatum"] for data in wohnort_geburtstag]
 
     # remove old columns
-    cols = df.columns.tolist()
-    cols.remove("Todesort/Ursache")
-    cols.remove("Name/Beruf/Familienverhältnis/Vater/Mutter/Zivilstand/Religion/Heimatort")
-    cols.remove("Wohnort/Geburtsdatum")
-    df = df[cols]
+    #cols = df.columns.tolist()
+    #cols.remove("Todesort/Ursache")
+    #cols.remove("Name/Beruf/Familienverhältnis/Vater/Mutter/Zivilstand/Religion/Heimatort")
+    #cols.remove("Wohnort/Geburtsdatum")
+    #df = df[cols]
 
     return df
 
@@ -285,3 +285,4 @@ df = df.sample(n=1)
 df = main_llm(df) 
 output_path = Path(__file__).parent / ("gpt-oss_" + file.name) 
 df.to_csv(output_path, index=False, encoding="utf-8-sig") 
+
