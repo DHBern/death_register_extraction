@@ -22,17 +22,16 @@ def extract_todesort_ursache(text):
         model=model,
         instructions="""
         Du bist ein Informationsextraktionssystem und extrahierst strukturierte Daten aus Text.
-        Was du extrahieren musst: Ort (= Todesort) und Todesursache.
+        Was du extrahieren musst: Stadt, Strasse oder Instutution und Nummmer des Todesorts und Todesursache.
 
         Regeln:
         1. Erfinde nichts dazu.
         2. Falls etwas nicht angegeben ist, schreibe '-'.
         3. Inkludiere so viele Informationen wie der Text hergibt.
-        4. Ort kann sein: Stadt, Strasse und Nummer. Aber auch eine Anstalt oder eine Ortsbeschreibung. 
-        5. Der Ort steht vor dem Wort 'an'.
-        6. Die Todesursache ist der Grund oder die Gründe warum jemand gestorben ist. 
-        7. Die Todesursache steht nach dem Wort 'an'.
-        8. Kleine Rechtschreibfehler kannst du ignorieren.
+        4. Der Ort steht vor dem Wort 'an'.
+        5. Die Todesursache ist der Grund oder die Gründe warum jemand gestorben ist. 
+        6. Die Todesursache steht nach dem Wort 'an'.
+        7. Kleine Rechtschreibfehler kannst du ignorieren.
         """,
         input=f"""
         Extrahiere die Informationen aus folgendem Text. 
@@ -47,14 +46,20 @@ def extract_todesort_ursache(text):
                 "schema": {
                     "type": "object",
                     "properties": {
-                        "Ort": {
+                        "Stadt": {
+                            "type": "string"
+                        },
+                        "Strasse/Institution": {
+                            "type": "string"
+                        },
+                        "Hausnummer": {
                             "type": "string"
                         },
                         "Todesursache": {
                             "type": "string"
                         }
                     },
-                    "required": ["Ort", "Todesursache"],
+                    "required": ["Stadt", "Strasse/Institution", "Hausnummer", "Todesursache"],
                     "additionalProperties": False
                 },
                 #"strict": True
@@ -134,7 +139,7 @@ def extract_wohnort_geburtstag(text):
         model=model,
         instructions="""
         Du bist ein Informationsextraktionssystem und extrahierst strukturierte Daten aus Text.
-        Was du extrahieren musst: Wohnort und Geburtsdatum.
+        Was du extrahieren musst: Stadt, Strasse und Nummmer des Wohnorts und Geburtsdatum.
 
         Regeln:
         1. Erfinde nichts dazu.
@@ -158,14 +163,20 @@ def extract_wohnort_geburtstag(text):
                 "schema": {
                     "type": "object",
                     "properties": {
-                        "Wohnort": {
+                        "Stadt": {
+                            "type": "string"
+                        },
+                        "Strasse": {
+                            "type": "string"
+                        },
+                        "Hausnummer": {
                             "type": "string"
                         },
                         "Geburtsdatum": {
                             "type": "string"
                         }
                     },
-                    "required": ["Wohnort", "Geburtsdatum"],
+                    "required": ["Stadt", "Strasse", "Hausnummer", "Geburtsdatum"],
                     "additionalProperties": False
                 },
             }
@@ -205,7 +216,9 @@ def main_llm(df):
 
     # apply llm stuff (ohne Statusbar: "apply" anstatt "progress_apply")
     todesort_ursache = df["Todesort/Ursache"].astype(str).progress_apply(extract_todesort_ursache).tolist()
-    df["Todesort"] = [data["Ort"] for data in todesort_ursache]
+    df["Todesort"] = [data["Stadt"] for data in todesort_ursache]
+    df["Strasse/Institution (Todesort)"] = [data["Strasse/Institution"] for data in todesort_ursache]
+    df["Hausnummer (Todesort)"] = [data["Hausnummer"] for data in todesort_ursache]
     df["Todesursache"] = [data["Todesursache"] for data in todesort_ursache]
 
     namen_beruf_leben = df["Name/Beruf/Familienverhältnis/Vater/Mutter/Zivilstand/Religion/Heimatort"].astype(str).progress_apply(extract_namen_beruf_leben).tolist()
@@ -218,7 +231,9 @@ def main_llm(df):
     df["Heimatort"] = [data["Heimatort"] for data in namen_beruf_leben]
 
     wohnort_geburtstag = df["Wohnort/Geburtsdatum"].astype(str).progress_apply(extract_wohnort_geburtstag).tolist()
-    df["Wohnort"] = [data["Wohnort"] for data in wohnort_geburtstag]
+    df["Wohnort"] = [data["Stadt"] for data in wohnort_geburtstag]
+    df["Strasse (Wohnort)"] = [data["Strasse"] for data in wohnort_geburtstag]
+    df["Hausnummer (Wohnort)"] = [data["Hausnummer"] for data in wohnort_geburtstag]
     df["Geburtsdatum"] = [data["Geburtsdatum"] for data in wohnort_geburtstag]
 
     # remove old columns
@@ -281,8 +296,7 @@ file = Path(__file__).parent / "data" / "neues_Format" / "1890_1892_Hottingen.cs
 df = pd.read_csv(file) 
 #df = df.loc[[1, 2]]
 #df = df.loc[100:104]
-df = df.sample(n=1)
+df = df.sample(n=5)
 df = main_llm(df) 
 output_path = Path(__file__).parent / ("gpt-oss_" + file.name) 
 df.to_csv(output_path, index=False, encoding="utf-8-sig") 
-
