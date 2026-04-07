@@ -15,8 +15,9 @@ from PIL import Image
 # KONFIGURATION
 # ==============================
 
-PDF_PATH = Path(r"C:\Users\janbl\OneDrive\Desktop\ZH_Projekt_Pipeline\Qwent\input")
-OUTPUT_DIR = Path(r"C:\Users\janbl\OneDrive\Desktop\ZH_Projekt_Pipeline\Qwent\output")
+PDF_PATH = BASE_DIR / "input"
+OUTPUT_DIR = BASE_DIR / "output"
+LOG_DIR = BASE_DIR / "logs"
 
 PROMPT = """Führe eine OCR-Analyse des angehängten Bildes durch. Das Bild ist jeweils so angeordnet, dass es zwei voneinander unabhängige einträge sind. Neben den langen text, steht links davon immer noch ein referenzeintrag. Diese beiden gehören zusammen. Gib nur den erkannten text aus, ändere den text nicht und füge keinerlei erklärungen hinzu. Trenne die beiden einzelnen Einträge und füge dem langen Eintrag (rechts) eine überschrift "Haupttext1" bzw. "Haupttext2" und dem kleineren Eintrag (links) die überschrift "Zusatzdata1" bzw. "Zusatzdata2" hinzu. Nutze exakt diese Labels: Zusatzdata1, Haupttext1, Zusatzdata2, Haupttext2. Die Nummer 1 betrifft die beiden oberen Einträge und Nummer 2 die beiden unteren."""
 
