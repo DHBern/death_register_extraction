@@ -48,15 +48,36 @@ print("=== DEBUG ENDE ===")
 # PDF → PNG
 # ==============================
 print("Starte PDF → PNG Konvertierung...")
+
+from pdf2image import convert_from_path, pdfinfo_from_path
+
 def pdf_to_png(pdf_path: Path, output_dir: Path):
     output_dir.mkdir(parents=True, exist_ok=True)
-    pages = convert_from_path(str(pdf_path), dpi=150)  # DPI auf 150 reduzieren
+
     image_paths = []
-    for i, page in enumerate(pages):
-        path = output_dir / f"{pdf_path.stem}_page_{i+1}.png"
-        page.convert("L").save(str(path), "PNG", compress_level=6)  # Graustufen + Kompression
-        resize_image(path, max_size=1200)  # Maximalgröße begrenzen
+
+    # Infos über PDF holen
+    info = pdfinfo_from_path(str(pdf_path))
+    max_pages = info["Pages"]
+
+    for i in range(1, max_pages + 1):
+        print(f"Konvertiere Seite {i}/{max_pages}")
+
+        pages = convert_from_path(
+            str(pdf_path),
+            dpi=150,
+            first_page=i,
+            last_page=i
+        )
+
+        page = pages[0]
+        path = output_dir / f"{pdf_path.stem}_page_{i}.png"
+
+        page.convert("L").save(str(path), "PNG", compress_level=6)
+        resize_image(path, max_size=1200)
+
         image_paths.append(path)
+
     return image_paths
 
 
@@ -209,36 +230,37 @@ def create_page_xml(sections, output_path):
 # ==============================
 
 def main():
-    print("MAIN WIRD AUSGEFÜHRT")
+    print(f"BASE_DIR: {BASE_DIR}")
+    print(f"PDF_PATH: {PDF_PATH}")
+    print(f"Existiert PDF_PATH? {PDF_PATH.exists()}")
+    print(f"Inhalt von PDF_PATH: {list(PDF_PATH.glob('*.pdf'))}")
+
     pdf_files = list(PDF_PATH.glob("*.pdf"))
     if not pdf_files:
         print("Keine PDFs im Input-Ordner gefunden.")
         return
 
-    # 🔹 Globale Stabilitäts-Parameter
     COOLDOWN_EVERY = 15
     COOLDOWN_SECONDS = 180
 
     for pdf in pdf_files:
         print(f"\n=== Verarbeite PDF: {pdf.name} ===")
 
-        # 🔹 PDF → PNG
+        # Eigener Output-Ordner pro PDF
         pdf_output_dir = OUTPUT_DIR / pdf.stem
         pdf_output_dir.mkdir(parents=True, exist_ok=True)
 
+        # PDF Seitenweise konvertieren
         png_files = pdf_to_png(pdf, pdf_output_dir)
 
-        page_counter = 0  # zählt über alle Batches hinweg
+        page_counter = 0
 
-        # 🔹 Batch-Verarbeitung
         for batch_start in range(0, len(png_files), BATCH_SIZE):
-
             batch = png_files[batch_start:batch_start + BATCH_SIZE]
             print(f"\n=== Starte Batch {batch_start//BATCH_SIZE + 1} ===")
 
             for png in batch:
                 page_counter += 1
-
                 print(f"--- Sende {png.name} an Qwen ---")
                 print(f"Dateigröße: {png.stat().st_size} Bytes")
 
@@ -251,23 +273,22 @@ def main():
                     print(f"PAGE-XML gespeichert: {xml_output_path}")
                     print(f"Antwort von Qwen: {result[:100]}...")
 
-                    # ✅ Mini-Pause nach erfolgreichem Request
-                    time.sleep(2)
+                    time.sleep(2)  # Mini-Pause
 
                 else:
                     print(f"Fehler: {png.name} konnte nicht verarbeitet werden.")
-                    print("=== Fehler erkannt – 90 Sekunden Cooldown ===")
+                    print("=== 90 Sekunden Cooldown ===")
                     time.sleep(90)
 
-                # 🔥 Globaler Cooldown alle X Seiten
                 if page_counter % COOLDOWN_EVERY == 0:
                     print(f"\n=== Globaler Cooldown für {COOLDOWN_SECONDS} Sekunden ===\n")
                     time.sleep(COOLDOWN_SECONDS)
 
-            # 🔥 Pause nach jedem Batch (nur wenn noch Seiten übrig sind)
             if batch_start + BATCH_SIZE < len(png_files):
                 print(f"\n=== Batch fertig – Pause {BATCH_PAUSE} Sekunden ===\n")
                 time.sleep(BATCH_PAUSE)
+
+    print("\n=== Verarbeitung abgeschlossen ===")
 
 if __name__ == "__main__":
     main()
