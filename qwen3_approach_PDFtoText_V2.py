@@ -47,7 +47,7 @@ print("=== DEBUG ENDE ===")
 # ==============================
 # PDF → PNG
 # ==============================
-
+print("Starte PDF → PNG Konvertierung...")
 def pdf_to_png(pdf_path: Path, output_dir: Path):
     output_dir.mkdir(parents=True, exist_ok=True)
     pages = convert_from_path(str(pdf_path), dpi=150)  # DPI auf 150 reduzieren
