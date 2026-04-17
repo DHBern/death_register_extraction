@@ -6,9 +6,10 @@ import xml.etree.ElementTree as ET
 import time
 import json
 
-XML_PATH = Path(r"C:\Users\janbl\OneDrive\Desktop\ZH_Projekt_Pipeline\Qwent\input")
-OUTPUT_DIR = Path(r"C:\Users\janbl\OneDrive\Desktop\ZH_Projekt_Pipeline\Qwent\output")
+BASE_DIR = Path.cwd()
 
+INPUT_BASE = BASE_DIR / "output"  # ← hier liegen deine XML-Ordner
+EXTRACTION_OUTPUT = BASE_DIR / "extraction_output"
 
 PROMPT_TEMPLATE = PROMPT_TEMPLATE = """Führe für den nachfolgenden Text eine Keyword-Extraktion durch.
 
@@ -177,74 +178,76 @@ def extract_sort_key(filename):
     return (0, 0, 0)
 
 def main():
-    
-    xml_files = sorted(
-        XML_PATH.glob("*.xml"),
-        key=lambda x: extract_sort_key(x.name)
-    )
+    EXTRACTION_OUTPUT.mkdir(parents=True, exist_ok=True)
 
-    if not xml_files:
-        print("Keine XML-Dateien gefunden.")
+    # 🔹 Alle Unterordner im output-Verzeichnis holen
+    pdf_folders = [p for p in INPUT_BASE.iterdir() if p.is_dir()]
+
+    if not pdf_folders:
+        print("Keine Ordner im output-Verzeichnis gefunden.")
         return
 
-    csv_output_path = Path("C:/Users/janbl/qwen_extraktion_strukturiert.csv")
+    for folder in pdf_folders:
+        print(f"\n=== Verarbeite Ordner: {folder.name} ===")
 
-    with open(csv_output_path, mode="w", newline="", encoding="utf-8") as csvfile:
-        writer = csv.writer(csvfile)
+        xml_files = sorted(
+            folder.glob("*.xml"),
+            key=lambda x: extract_sort_key(x.name)
+        )
 
-        # CSV HEADER
-        writer.writerow([
-            "Datei",
-            "XML_Block_Index",
-            "Todeszeit",
-            "Todesort/Ursache",
-            "Name/Beruf/Vater,Mutter/Zivilstand/Wohn/Heimatort/Konfession",
-            "Wohnort/Geburtsdatum"
-        ])
+        if not xml_files:
+            print(f"⚠ Keine XML-Dateien in {folder.name}")
+            continue
 
-        for xml_file in xml_files:
-            print(f"\nVerarbeite XML: {xml_file.name}")
+        # 🔹 CSV pro Ordner
+        csv_output_path = EXTRACTION_OUTPUT / f"{folder.name}.csv"
 
-            haupttexte = extract_haupttexte_from_xml(xml_file)
+        with open(csv_output_path, mode="w", newline="", encoding="utf-8") as csvfile:
+            writer = csv.writer(csvfile)
 
-            for idx, (region_id, zusatzdata, text) in enumerate(haupttexte, start=1):
-                print(f"  → Sende {region_id} an Qwen")
+            writer.writerow([
+                "Datei",
+                "XML_Block_Index",
+                "Todeszeit",
+                "Todesort/Ursache",
+                "Name/Beruf/Vater,Mutter/Zivilstand/Wohn/Heimatort/Konfession",
+                "Wohnort/Geburtsdatum"
+            ])
 
-                cleaned = clean_text(text)
-                result = send_with_retry(cleaned)
+            for xml_file in xml_files:
+                print(f"  → Verarbeite XML: {xml_file.name}")
 
-                if not result:
-                    print("⚠ Kein Resultat")
-                    continue
+                haupttexte = extract_haupttexte_from_xml(xml_file)
 
-                try:
-                    parsed = json.loads(result)
+                for idx, (region_id, zusatzdata, text) in enumerate(haupttexte, start=1):
+                    print(f"    → Sende {region_id} an Qwen")
 
-                    todeszeit = parsed.get("Todeszeit", "")
-                    todesort = parsed.get("Todesort/Ursache", "")
-                    nameblock = parsed.get(
-                        "Name/Beruf/Familienverhältnis/Vater/Mutter/Zivilstand/Religion/Heimatort", ""
-                    )
-                    wohn_geb = parsed.get("Wohnort/Geburtsdatum", "")
+                    cleaned = clean_text(text)
+                    result = send_with_retry(cleaned)
 
-                    # Optional: einfache Trennung Geburtsdatum
-                    geburtsdatum = wohn_geb
+                    if not result:
+                        print("⚠ Kein Resultat")
+                        continue
 
-                    writer.writerow([
-                        xml_file.name,
-                        idx,
-                        todeszeit,
-                        todesort,
-                        nameblock,
-                        "",  # falls du später splitten willst
-                        geburtsdatum
-                    ])
+                    try:
+                        parsed = json.loads(result)
 
-                except json.JSONDecodeError:
-                    print("❌ JSON Fehler bei:", xml_file.name, region_id)
-                    print("RAW:", result)
+                        writer.writerow([
+                            xml_file.name,
+                            idx,
+                            parsed.get("Todeszeit", ""),
+                            parsed.get("Todesort/Ursache", ""),
+                            parsed.get("Name/Beruf/Familienverhältnis/Vater/Mutter/Zivilstand/Religion/Heimatort", ""),
+                            parsed.get("Wohnort/Geburtsdatum", "")
+                        ])
 
-    print(f"\nCSV gespeichert unter: {csv_output_path}")
+                    except json.JSONDecodeError:
+                        print("❌ JSON Fehler bei:", xml_file.name, region_id)
+                        print("RAW:", result)
+
+        print(f"✅ CSV gespeichert: {csv_output_path}")
+
+    print("\n=== ALLE ORDNER FERTIG ===")
 
 if __name__ == "__main__":
     main()
