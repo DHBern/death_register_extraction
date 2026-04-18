@@ -532,21 +532,23 @@ if __name__ == "__main__":
 
     for file in csv_files:
         print(f"\n=== Verarbeite Datei: {file.name} ===")
-
+    
         try:
             df = pd.read_csv(file)
-
+    
+            df = df.fillna("-")   # 🔥 FIX: verhindert float/NaN Crash
+    
             df = main_llm(df)
-
+    
             report = evaluate_df(df)
             print("Qualitätsreport:")
             for k, v in report.items():
                 print(f"{k}: {v}%")
-
+    
             output_path = OUTPUT_DIR / ("gpt-oss_" + file.name)
             df.to_csv(output_path, index=False, encoding="utf-8-sig")
-
+    
             print(f"Gespeichert: {output_path}")
-
+    
         except Exception as e:
             print(f"❌ Fehler bei Datei {file.name}: {e}")
