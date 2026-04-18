@@ -424,12 +424,42 @@ for file in folderInput.glob("*.csv"):
 
 # single file:
 '''
-file = Path(__file__).parent / "1890_1892_Hottingen_28-46.csv" #path to file
-folderOutput = Path(__file__).parent / "data" / "neues_Format" / "output_llm" #path to folder for output files
-df = pd.read_csv(file) #read the csv file
-df = main_llm(df) 
-output_path = folderOutput / ("gpt-oss_" + file.name) #path + name for output file
-df.to_csv(output_path, index=False, encoding="utf-8-sig") #save
+# -----------------------------------------
+# Batch-Verarbeitung aller CSVs
+# -----------------------------------------
+
+BASE_DIR = Path.cwd()
+INPUT_DIR = BASE_DIR / "extraction_output"
+OUTPUT_DIR = BASE_DIR / "llm_output"
+
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+csv_files = list(INPUT_DIR.glob("*.csv"))
+
+if not csv_files:
+    print("Keine CSV-Dateien gefunden!")
+    exit()
+
+for file in csv_files:
+    print(f"\n=== Verarbeite Datei: {file.name} ===")
+
+    try:
+        df = pd.read_csv(file)
+
+        df = main_llm(df)
+
+        report = evaluate_df(df)
+        print("Qualitätsreport:")
+        for k, v in report.items():
+            print(f"{k}: {v}%")
+
+        output_path = OUTPUT_DIR / ("gpt-oss_" + file.name)
+        df.to_csv(output_path, index=False, encoding="utf-8-sig")
+
+        print(f"Gespeichert: {output_path}")
+
+    except Exception as e:
+        print(f"❌ Fehler bei Datei {file.name}: {e}")
 '''
 
 #endregion
@@ -487,15 +517,36 @@ def evaluate_df(df):
 #print(extract_namen_beruf_leben(namen_beruf_leben_text))
 #print(extract_wohnort_geburtstag(wohnort_geburtstag_text))
 
+if __name__ == "__main__":
+    BASE_DIR = Path.cwd()
+    INPUT_DIR = BASE_DIR / "extraction_output"
+    OUTPUT_DIR = BASE_DIR / "llm_output"
 
-file = Path(__file__).parent / "Qwent" / "1895_b2_qwen_extraktion_strukturiert.csv"
-df = pd.read_csv(file) 
-#df = df.loc[[1, 2]]
-#df = df.loc[100:104]
-#df = df.sample(n=1)
-df = main_llm(df) 
-report = evaluate_df(df)
-for k, v in report.items():
-    print(f"{k}: {v}%")
-output_path = Path(__file__).parent / ("gpt-oss_" + file.name) 
-df.to_csv(output_path, index=False, encoding="utf-8-sig") 
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    csv_files = list(INPUT_DIR.glob("*.csv"))
+
+    if not csv_files:
+        print("Keine CSV-Dateien gefunden!")
+        exit()
+
+    for file in csv_files:
+        print(f"\n=== Verarbeite Datei: {file.name} ===")
+
+        try:
+            df = pd.read_csv(file)
+
+            df = main_llm(df)
+
+            report = evaluate_df(df)
+            print("Qualitätsreport:")
+            for k, v in report.items():
+                print(f"{k}: {v}%")
+
+            output_path = OUTPUT_DIR / ("gpt-oss_" + file.name)
+            df.to_csv(output_path, index=False, encoding="utf-8-sig")
+
+            print(f"Gespeichert: {output_path}")
+
+        except Exception as e:
+            print(f"❌ Fehler bei Datei {file.name}: {e}")
