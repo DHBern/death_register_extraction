@@ -169,13 +169,10 @@ def merge_duplicate_tags(result_text):
 # ==============================
 
 def extract_sort_key(filename):
-    match = re.search(r'(\d{4}).*?_b(\d+)_.*?page_(\d+)', filename)
+    match = re.search(r'page_(\d+)', filename)
     if match:
-        year = int(match.group(1))
-        band = int(match.group(2))
-        page = int(match.group(3))
-        return (year, band, page)
-    return (0, 0, 0)
+        return int(match.group(1))
+    return 0
 
 def main():
     EXTRACTION_OUTPUT.mkdir(parents=True, exist_ok=True)
