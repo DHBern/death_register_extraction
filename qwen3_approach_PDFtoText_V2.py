@@ -43,7 +43,7 @@ WICHTIGE REGELN:
 - Alte Orthographie exakt übernehmen.
 - Lateinische Begriffe exakt übernehmen.
 
-Das Bild enthält zwei Einträge.
+Dieses Bild enthält genau einen Eintrag (entweder oberer oder unterer Teil der Seite).
 - linke Spalte: Zusatzdata
 - rechte Spalte: Haupttext
 
@@ -253,6 +253,21 @@ def create_page_xml(sections, output_path):
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(pretty_xml)
 # ==============================
+# Cropping
+# ==============================
+
+def crop_rois_fixed(page_image):
+    width, height = page_image.size
+
+    # leichter Bias nach oben/unten möglich
+    split_y = height // 2
+
+    top = page_image.crop((0, 0, width, split_y))
+    bottom = page_image.crop((0, split_y, width, height))
+
+    return top, bottom
+
+# ==============================
 # HAUPTPROGRAMM
 # ==============================
 
@@ -300,18 +315,20 @@ def main():
             
             page = pages[0]
             
-            # 🔥 IMAGE ENHANCEMENT STEP
-            page = enhance_image(page)
+            top, bottom = crop_rois_fixed(page)
             
-            png_path = pdf_output_dir / f"{pdf.stem}_page_{i}.png"
+            top = enhance_image(top)
+            bottom = enhance_image(bottom)
             
-            page.save(
-                str(png_path),
-                "PNG",
-                compress_level=2
-            )
-
-            resize_image(png_path, max_size=1400)
+            png_top = pdf_output_dir / f"{pdf.stem}_page_{i}_top.png"
+            png_bottom = pdf_output_dir / f"{pdf.stem}_page_{i}_bottom.png"
+            
+            top.save(png_top, "PNG", compress_level=2)
+            bottom.save(png_bottom, "PNG", compress_level=2)
+            
+            resize_image(png_top, max_size=1400)
+            resize_image(png_bottom, max_size=1400)
+        
 
             # Speicher freigeben
             page.close()
@@ -321,11 +338,20 @@ def main():
 
             print(f"--- Sende Seite {i} an Qwen ---")
 
-            result = send_to_qwen_with_retry(png_path)
+            result_top = send_to_qwen_with_retry(png_top)
+            result_bottom = send_to_qwen_with_retry(png_bottom)
 
-            if result:
+            if result_top or result_bottom:
 
-                sections = parse_ocr_output(result)
+                sections_top = parse_ocr_output(result_top)
+                sections_bottom = parse_ocr_output(result_bottom)
+                
+                sections = {
+                    "Zusatzdata1": sections_top.get("Zusatzdata1", ""),
+                    "Haupttext1": sections_top.get("Haupttext1", ""),
+                    "Zusatzdata2": sections_bottom.get("Zusatzdata2", ""),
+                    "Haupttext2": sections_bottom.get("Haupttext2", "")
+                }
 
                 xml_output_path = (
                     pdf_output_dir /
@@ -346,10 +372,11 @@ def main():
                 print(f"Fehler bei Seite {i}")
 
             # PNG löschen
-            try:
-                os.remove(png_path)
-            except:
-                pass
+            for p in [png_top, png_bottom]:
+                try:
+                    os.remove(p)
+                except:
+                    pass
 
             time.sleep(2)
 
