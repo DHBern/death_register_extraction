@@ -90,7 +90,7 @@ print("Starte PDF → PNG Konvertierung...")
 
 from pdf2image import convert_from_path, pdfinfo_from_path
 
-def resize_image(image_path, max_size=1500):
+def resize_image(image_path, max_size=1400):
     img = Image.open(image_path)
 
     if img.width > max_size:
@@ -154,7 +154,7 @@ def send_to_qwen_with_retry(png_path):
             print(f"[Fehler] Versuch {attempt}: {e}")
 
         # Wenn 3 Versuche fehlgeschlagen → Bild verkleinern
-        if attempt == 3:
+        if attempt == 2:
             print("⚠ Verkleinere Bild und versuche erneut...")
             current_path = downscale_image(current_path, scale=0.75)
 
@@ -275,7 +275,7 @@ def main():
             # Nur EINE Seite rendern
             pages = convert_from_path(
                 str(pdf),
-                dpi=300,
+                dpi=200,
                 first_page=i,
                 last_page=i
             )
@@ -290,7 +290,7 @@ def main():
                 compress_level=2
             )
 
-            resize_image(png_path, max_size=1800)
+            resize_image(png_path, max_size=1400)
 
             # Speicher freigeben
             page.close()
