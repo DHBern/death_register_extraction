@@ -22,8 +22,45 @@ PDF_PATH = BASE_DIR / "input"
 OUTPUT_DIR = BASE_DIR / "output"
 LOG_DIR = BASE_DIR / "logs"
 
-PROMPT = """Führe eine OCR-Analyse des angehängten Bildes durch. Das Bild ist jeweils so angeordnet, dass es zwei voneinander unabhängige einträge sind. Neben den langen text, steht links davon immer noch ein referenzeintrag. Diese beiden gehören zusammen. Gib nur den erkannten text aus, ändere den text nicht und füge keinerlei erklärungen hinzu. Trenne die beiden einzelnen Einträge und füge dem langen Eintrag (rechts) eine überschrift "Haupttext1" bzw. "Haupttext2" und dem kleineren Eintrag (links) die überschrift "Zusatzdata1" bzw. "Zusatzdata2" hinzu. Nutze exakt diese Labels: Zusatzdata1, Haupttext1, Zusatzdata2, Haupttext2. Die Nummer 1 betrifft die beiden oberen Einträge und Nummer 2 die beiden unteren."""
+PROMPT = """
+Du bist eine STRICT OCR engine.
 
+WICHTIGE REGELN:
+- Gib EXAKT die Zeichen zurück, die im Bild sichtbar sind.
+- NICHT interpretieren.
+- NICHT modernisieren.
+- NICHT übersetzen.
+- NICHT korrigieren.
+- NICHT ergänzen.
+- NICHT zusammenfassen.
+- NICHT medizinisch interpretieren.
+- Keine Synonyme verwenden.
+- Keine Vermutungen.
+- Wenn ein Feld leer ist, lasse es leer.
+- Wenn nur einzelne Buchstaben sichtbar sind, gib nur diese Buchstaben aus.
+- Historische Schreibweisen müssen exakt erhalten bleiben.
+- Alte Orthographie exakt übernehmen.
+- Lateinische Begriffe exakt übernehmen.
+
+Das Bild enthält zwei Einträge.
+Links steht jeweils ein Referenzeintrag, rechts der Haupttext.
+
+Gib ausschließlich diese Struktur zurück:
+
+Zusatzdata1:
+...
+
+Haupttext1:
+...
+
+Zusatzdata2:
+...
+
+Haupttext2:
+...
+
+Keine zusätzlichen Kommentare.
+"""
 #MAX_WIDTH = 512
 RETRIES = 3
 RETRY_DELAY = 20  # Sekunden
