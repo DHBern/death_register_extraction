@@ -44,7 +44,10 @@ WICHTIGE REGELN:
 - Lateinische Begriffe exakt übernehmen.
 
 Das Bild enthält zwei Einträge.
-Links steht jeweils ein Referenzeintrag, rechts der Haupttext.
+- linke Spalte: Zusatzdata
+- rechte Spalte: Haupttext
+
+Lies strikt zeilenweise von oben nach unten pro Spalte.
 
 Gib ausschließlich diese Struktur zurück:
 
@@ -163,7 +166,22 @@ def send_to_qwen_with_retry(png_path):
         backoff *= 2  # exponentielles Backoff
 
     return None
+from PIL import ImageEnhance, ImageFilter
 
+def enhance_image(img):
+    # 1. Graustufen (wichtig für OCR)
+    img = img.convert("L")
+
+    # 2. Kontrast erhöhen
+    img = ImageEnhance.Contrast(img).enhance(1.8)
+
+    # 3. Schärfen
+    img = ImageEnhance.Sharpness(img).enhance(2.0)
+
+    # 4. leichter zusätzlicher Sharpen-Filter
+    img = img.filter(ImageFilter.SHARPEN)
+
+    return img
 
 def downscale_image(png_path, scale=0.75):
     img = Image.open(png_path)
@@ -275,15 +293,18 @@ def main():
             # Nur EINE Seite rendern
             pages = convert_from_path(
                 str(pdf),
-                dpi=200,
+                dpi=300,
                 first_page=i,
                 last_page=i
             )
-
+            
             page = pages[0]
-
+            
+            # 🔥 IMAGE ENHANCEMENT STEP
+            page = enhance_image(page)
+            
             png_path = pdf_output_dir / f"{pdf.stem}_page_{i}.png"
-
+            
             page.save(
                 str(png_path),
                 "PNG",
