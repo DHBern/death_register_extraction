@@ -61,6 +61,7 @@ Haupttext2:
 ...
 
 Keine zusätzlichen Kommentare.
+Erfinde niemals etwas neues
 """
 #MAX_WIDTH = 512
 RETRIES = 3
@@ -88,36 +89,6 @@ print("=== DEBUG ENDE ===")
 print("Starte PDF → PNG Konvertierung...")
 
 from pdf2image import convert_from_path, pdfinfo_from_path
-
-def pdf_to_png(pdf_path: Path, output_dir: Path):
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    image_paths = []
-
-    # Infos über PDF holen
-    info = pdfinfo_from_path(str(pdf_path))
-    max_pages = info["Pages"]
-
-    for i in range(1, max_pages + 1):
-        print(f"Konvertiere Seite {i}/{max_pages}")
-
-        pages = convert_from_path(
-            str(pdf_path),
-            dpi=150,
-            first_page=i,
-            last_page=i
-        )
-
-        page = pages[0]
-        path = output_dir / f"{pdf_path.stem}_page_{i}.png"
-
-        page.convert("L").save(str(path), "PNG", compress_level=6)
-        resize_image(path, max_size=1200)
-
-        image_paths.append(path)
-
-    return image_paths
-
 
 def resize_image(image_path, max_size=1500):
     img = Image.open(image_path)
@@ -304,7 +275,7 @@ def main():
             # Nur EINE Seite rendern
             pages = convert_from_path(
                 str(pdf),
-                dpi=90,
+                dpi=300,
                 first_page=i,
                 last_page=i
             )
@@ -313,13 +284,13 @@ def main():
 
             png_path = pdf_output_dir / f"{pdf.stem}_page_{i}.png"
 
-            page.convert("L").save(
+            page.save(
                 str(png_path),
                 "PNG",
-                compress_level=6
+                compress_level=2
             )
 
-            resize_image(png_path, max_size=900)
+            resize_image(png_path, max_size=1800)
 
             # Speicher freigeben
             page.close()
