@@ -10,6 +10,7 @@ from xml.dom import minidom
 import re
 import time
 from PIL import Image
+import numpy as np
 
 print("SCRIPT STARTET")
 
@@ -264,21 +265,67 @@ def create_page_xml(sections, output_path):
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(pretty_xml)
 # ==============================
-# Cropping
+# Dynamische Trennlinie suchen
 # ==============================
-def crop_rois_fixed(page_image):
+
+def find_split_line(page_image):
+
+    gray = page_image.convert("L")
+
+    arr = np.array(gray)
+
+    # dunkle Pixel zählen
+    dark_pixels = arr < 140
+
+    row_scores = dark_pixels.sum(axis=1)
+
+    h = arr.shape[0]
+
+    # nur mittleren Bereich durchsuchen
+    start = int(h * 0.35)
+    end = int(h * 0.65)
+
+    search_scores = row_scores[start:end]
+
+    split_y = start + np.argmax(search_scores)
+
+    print(f"Gefundene Trennlinie bei y={split_y}")
+
+    return split_y
+
+
+# ==============================
+# Dynamisches ROI Cropping
+# ==============================
+
+def crop_rois_dynamic(page_image):
 
     width, height = page_image.size
 
-    split_y = int(height * 0.53)
-    left_margin = int(width * 0.12)
+    split_y = find_split_line(page_image)
+
+    # etwas Rand wegschneiden
+    left_margin = int(width * 0.10)
+
+    # Sicherheitspuffer um die Linie
+    padding = 20
 
     top = page_image.crop(
-        (left_margin, 0, width, split_y)
+        (
+            left_margin,
+            0,
+            width,
+            split_y + padding
+        )
     )
-    
+
     bottom = page_image.crop(
-        (left_margin, split_y, width, height)
+        (
+            left_margin,
+            split_y - padding,
+            width,
+            height
+        )
     )
 
     return top, bottom
@@ -331,7 +378,7 @@ def main():
             
             page = pages[0]
             
-            top, bottom = crop_rois_fixed(page)
+            top, bottom = crop_rois_dynamic(page)
             
             top = enhance_image(top)
             bottom = enhance_image(bottom)
