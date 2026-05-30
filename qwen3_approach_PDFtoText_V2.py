@@ -51,16 +51,10 @@ Lies strikt zeilenweise von oben nach unten pro Spalte.
 
 Gib ausschließlich diese Struktur zurück:
 
-Zusatzdata1:
+Zusatzdata:
 ...
 
-Haupttext1:
-...
-
-Zusatzdata2:
-...
-
-Haupttext2:
+Haupttext:
 ...
 
 Keine zusätzlichen Kommentare.
@@ -196,36 +190,53 @@ def downscale_image(png_path, scale=0.75):
 import re
 
 def parse_ocr_output(text):
+
     sections = {
-        "Zusatzdata1": "",
-        "Haupttext1": "",
-        "Zusatzdata2": "",
-        "Haupttext2": ""
+        "Zusatzdata": "",
+        "Haupttext": ""
     }
 
     current_key = None
-    # Suche nach den Keywords irgendwo in der Zeile, ignoriere Groß/Kleinschreibung und Sterne
-    keywords = ["Zusatzdata1", "Haupttext1", "Zusatzdata2", "Haupttext2"]
+
+    keywords = [
+        "Zusatzdata",
+        "Haupttext"
+    ]
 
     for line in text.splitlines():
+
         clean_line = line.strip()
+
         if not clean_line:
             continue
 
         found_header = False
+
         for key in keywords:
-            # Prüft, ob das Keyword (evtl. mit Sternchen drumherum) am Zeilenanfang steht
-            if re.match(rf'^\**{key}\**', clean_line, re.IGNORECASE):
+
+            if re.match(
+                rf'^\**{key}\**',
+                clean_line,
+                re.IGNORECASE
+            ):
+
                 current_key = key
                 found_header = True
-                
-                # Falls nach dem Header direkt Text kommt (z.B. "Haupttext1: Dies ist der Text")
-                # Entferne den Header-Teil aus der ersten Zeile
-                content_after_header = re.sub(rf'^\**{key}\**\s*:?\s*', '', clean_line, flags=re.IGNORECASE)
+
+                content_after_header = re.sub(
+                    rf'^\**{key}\**\s*:?\s*',
+                    '',
+                    clean_line,
+                    flags=re.IGNORECASE
+                )
+
                 if content_after_header:
-                    sections[current_key] += content_after_header + "\n"
+                    sections[current_key] += (
+                        content_after_header + "\n"
+                    )
+
                 break
-        
+
         if found_header:
             continue
 
@@ -255,15 +266,20 @@ def create_page_xml(sections, output_path):
 # ==============================
 # Cropping
 # ==============================
-
 def crop_rois_fixed(page_image):
+
     width, height = page_image.size
 
-    # leichter Bias nach oben/unten möglich
-    split_y = height // 2
+    split_y = int(height * 0.53)
+    left_margin = int(width * 0.12)
 
-    top = page_image.crop((0, 0, width, split_y))
-    bottom = page_image.crop((0, split_y, width, height))
+    top = page_image.crop(
+        (left_margin, 0, width, split_y)
+    )
+    
+    bottom = page_image.crop(
+        (left_margin, split_y, width, height)
+    )
 
     return top, bottom
 
@@ -340,19 +356,44 @@ def main():
 
             result_top = send_to_qwen_with_retry(png_top)
             result_bottom = send_to_qwen_with_retry(png_bottom)
-
-            if result_top or result_bottom:
-
+            if result_top:
+            
                 sections_top = parse_ocr_output(result_top)
-                sections_bottom = parse_ocr_output(result_bottom)
-                
-                sections = {
-                    "Zusatzdata1": sections_top.get("Zusatzdata1", ""),
-                    "Haupttext1": sections_top.get("Haupttext1", ""),
-                    "Zusatzdata2": sections_bottom.get("Zusatzdata2", ""),
-                    "Haupttext2": sections_bottom.get("Haupttext2", "")
+            
+            else:
+            
+                sections_top = {
+                    "Zusatzdata": "",
+                    "Haupttext": ""
                 }
-
+            
+            if result_bottom:
+            
+                sections_bottom = parse_ocr_output(result_bottom)
+            
+            else:
+            
+                sections_bottom = {
+                    "Zusatzdata": "",
+                    "Haupttext": ""
+                }
+            
+            if result_top or result_bottom:
+            
+                sections = {
+            
+                    "Zusatzdata1":
+                        sections_top.get("Zusatzdata", ""),
+            
+                    "Haupttext1":
+                        sections_top.get("Haupttext", ""),
+            
+                    "Zusatzdata2":
+                        sections_bottom.get("Zusatzdata", ""),
+            
+                    "Haupttext2":
+                        sections_bottom.get("Haupttext", "")
+                }
                 xml_output_path = (
                     pdf_output_dir /
                     f"{pdf.stem}_page_{i}.xml"
