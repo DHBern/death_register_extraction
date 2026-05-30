@@ -44,22 +44,28 @@ WICHTIGE REGELN:
 - Alte Orthographie exakt übernehmen.
 - Lateinische Begriffe exakt übernehmen.
 
-Dieses Bild enthält genau einen Eintrag (entweder oberer oder unterer Teil der Seite).
-- linke Spalte: Zusatzdata
-- rechte Spalte: Haupttext
+Wenn ein Wort nicht eindeutig lesbar ist,
+gib [unleserlich] zurück.
 
-Lies strikt zeilenweise von oben nach unten pro Spalte.
+Niemals fehlende Wörter ergänzen.
 
-Gib ausschließlich diese Struktur zurück:
+Niemals Datumsangaben erraten.
 
-Zusatzdata:
-...
+Niemals Standardformulierungen ergänzen.
+
+Keine zusätzlichen Kommentare.
+Erfinde niemals etwas neues
+
+
+Dieses Bild enthält genau einen Sterberegistereintrag.
+
+Gib ausschließlich den sichtbaren Text zurück.
+
+Format:
 
 Haupttext:
 ...
 
-Keine zusätzlichen Kommentare.
-Erfinde niemals etwas neues
 """
 #MAX_WIDTH = 512
 RETRIES = 3
@@ -88,7 +94,7 @@ print("Starte PDF → PNG Konvertierung...")
 
 from pdf2image import convert_from_path, pdfinfo_from_path
 
-def resize_image(image_path, max_size=1400):
+def resize_image(image_path, max_size=2000):
     img = Image.open(image_path)
 
     if img.width > max_size:
@@ -168,10 +174,10 @@ def enhance_image(img):
     img = img.convert("L")
 
     # 2. Kontrast erhöhen
-    img = ImageEnhance.Contrast(img).enhance(1.8)
+    img = ImageEnhance.Contrast(img).enhance(1.3)
 
     # 3. Schärfen
-    img = ImageEnhance.Sharpness(img).enhance(2.0)
+    img = ImageEnhance.Sharpness(img).enhance(1.3)
 
     # 4. leichter zusätzlicher Sharpen-Filter
     img = img.filter(ImageFilter.SHARPEN)
@@ -192,60 +198,16 @@ import re
 
 def parse_ocr_output(text):
 
-    sections = {
-        "Zusatzdata": "",
-        "Haupttext": ""
-    }
+    match = re.search(
+        r"Haupttext:\s*(.*)",
+        text,
+        flags=re.DOTALL | re.IGNORECASE
+    )
 
-    current_key = None
+    if match:
+        return match.group(1).strip()
 
-    keywords = [
-        "Zusatzdata",
-        "Haupttext"
-    ]
-
-    for line in text.splitlines():
-
-        clean_line = line.strip()
-
-        if not clean_line:
-            continue
-
-        found_header = False
-
-        for key in keywords:
-
-            if re.match(
-                rf'^\**{key}\**',
-                clean_line,
-                re.IGNORECASE
-            ):
-
-                current_key = key
-                found_header = True
-
-                content_after_header = re.sub(
-                    rf'^\**{key}\**\s*:?\s*',
-                    '',
-                    clean_line,
-                    flags=re.IGNORECASE
-                )
-
-                if content_after_header:
-                    sections[current_key] += (
-                        content_after_header + "\n"
-                    )
-
-                break
-
-        if found_header:
-            continue
-
-        if current_key:
-            sections[current_key] += line + "\n"
-
-    return sections
-
+    return text.strip()
 
 def create_page_xml(sections, output_path):
     PcGts = ET.Element("PcGts")
@@ -265,66 +227,95 @@ def create_page_xml(sections, output_path):
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(pretty_xml)
 # ==============================
-# Dynamische Trennlinie suchen
+# Dynamische horizontale und vertikale Trennlinie suchen
 # ==============================
-
-def find_split_line(page_image):
+def find_vertical_separator(page_image):
 
     gray = page_image.convert("L")
-
     arr = np.array(gray)
 
-    # dunkle Pixel zählen
-    dark_pixels = arr < 140
+    dark_pixels = arr < 180
+
+    # Anzahl dunkler Pixel pro Spalte
+    col_scores = dark_pixels.sum(axis=0)
+
+    width = arr.shape[1]
+
+    start = int(width * 0.05)
+    end = int(width * 0.40)
+
+    search = col_scores[start:end]
+
+    separator_x = start + np.argmax(search)
+
+    print(f"Vertikale Trennlinie gefunden bei x={separator_x}")
+
+    return separator_x
+
+def find_horizontal_separator(main_text_img):
+
+    gray = main_text_img.convert("L")
+    arr = np.array(gray)
+
+    dark_pixels = arr < 180
 
     row_scores = dark_pixels.sum(axis=1)
 
     h = arr.shape[0]
 
-    # nur mittleren Bereich durchsuchen
     start = int(h * 0.35)
     end = int(h * 0.65)
 
-    search_scores = row_scores[start:end]
+    search = row_scores[start:end]
 
-    split_y = start + np.argmax(search_scores)
+    separator_y = start + np.argmax(search)
 
-    print(f"Gefundene Trennlinie bei y={split_y}")
+    print(f"Horizontale Trennlinie gefunden bei y={separator_y}")
 
-    return split_y
+    return separator_y
 
 
 # ==============================
 # Dynamisches ROI Cropping
 # ==============================
 
-def crop_rois_dynamic(page_image):
+def crop_maintext_entries(page_image):
 
     width, height = page_image.size
 
-    split_y = find_split_line(page_image)
+    separator_x = find_vertical_separator(page_image)
 
-    # etwas Rand wegschneiden
-    left_margin = int(width * 0.10)
+    padding_x = 20
 
-    # Sicherheitspuffer um die Linie
-    padding = 20
-
-    top = page_image.crop(
+    # Nur rechte Haupttext-Spalte behalten
+    main_text = page_image.crop(
         (
-            left_margin,
+            separator_x + padding_x,
             0,
             width,
-            split_y + padding
+            height
         )
     )
 
-    bottom = page_image.crop(
+    separator_y = find_horizontal_separator(main_text)
+
+    padding_y = 20
+
+    top = main_text.crop(
         (
-            left_margin,
-            split_y - padding,
-            width,
-            height
+            0,
+            0,
+            main_text.width,
+            separator_y + padding_y
+        )
+    )
+
+    bottom = main_text.crop(
+        (
+            0,
+            separator_y - padding_y,
+            main_text.width,
+            main_text.height
         )
     )
 
@@ -378,7 +369,7 @@ def main():
             
             page = pages[0]
             
-            top, bottom = crop_rois_dynamic(page)
+            top, bottom = crop_maintext_entries(page)
             
             top = enhance_image(top)
             bottom = enhance_image(bottom)
@@ -403,49 +394,24 @@ def main():
 
             result_top = send_to_qwen_with_retry(png_top)
             result_bottom = send_to_qwen_with_retry(png_bottom)
-            if result_top:
-            
-                sections_top = parse_ocr_output(result_top)
-            
-            else:
-            
-                sections_top = {
-                    "Zusatzdata": "",
-                    "Haupttext": ""
-                }
-            
-            if result_bottom:
-            
-                sections_bottom = parse_ocr_output(result_bottom)
-            
-            else:
-            
-                sections_bottom = {
-                    "Zusatzdata": "",
-                    "Haupttext": ""
-                }
-            
             if result_top or result_bottom:
             
                 sections = {
             
-                    "Zusatzdata1":
-                        sections_top.get("Zusatzdata", ""),
-            
                     "Haupttext1":
-                        sections_top.get("Haupttext", ""),
-            
-                    "Zusatzdata2":
-                        sections_bottom.get("Zusatzdata", ""),
+                        parse_ocr_output(result_top)
+                        if result_top else "",
             
                     "Haupttext2":
-                        sections_bottom.get("Haupttext", "")
+                        parse_ocr_output(result_bottom)
+                        if result_bottom else ""
                 }
+            
                 xml_output_path = (
                     pdf_output_dir /
                     f"{pdf.stem}_page_{i}.xml"
                 )
-
+            
                 create_page_xml(
                     sections,
                     xml_output_path
