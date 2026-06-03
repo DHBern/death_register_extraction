@@ -12,36 +12,64 @@ import time
 from PIL import Image
 from google import genai
 from google.genai import types
+import numpy as np
+from PIL import ImageEnhance, ImageFilter
 
 # ==============================
 # KONFIGURATION
 # ==============================
 
-PDF_PATH = Path(r"C:\Users\janbl\OneDrive\Desktop\ZH_Projekt_Pipeline\Qwent\test")
-OUTPUT_DIR = Path(r"C:\Users\janbl\OneDrive\Desktop\ZH_Projekt_Pipeline\Qwent\output")
+BASE_DIR = Path.cwd()
+
+PDF_PATH = BASE_DIR / "input"
+OUTPUT_DIR = BASE_DIR / "output"
+LOG_DIR = BASE_DIR / "logs"
+
 
 PROMPT = """
-Extract text exactly as shown in the image.
+Du bist eine STRICT OCR engine.
 
-There are TWO separate entries.
+WICHTIGE REGELN:
+- Gib EXAKT die Zeichen zurück, die im Bild sichtbar sind.
+- NICHT interpretieren.
+- NICHT modernisieren.
+- NICHT übersetzen.
+- NICHT korrigieren.
+- NICHT ergänzen.
+- NICHT zusammenfassen.
+- NICHT medizinisch interpretieren.
+- Keine Synonyme verwenden.
+- Keine Vermutungen.
+- Wenn ein Feld leer ist, lasse es leer.
+- Wenn nur einzelne Buchstaben sichtbar sind, gib nur diese Buchstaben aus.
+- Historische Schreibweisen müssen exakt erhalten bleiben.
+- Alte Orthographie exakt übernehmen.
+- Lateinische Begriffe exakt übernehmen.
 
-Structure your output EXACTLY like this:
+Wenn ein Wort nicht eindeutig lesbar ist,
+gib [unleserlich] zurück.
 
-Zusatzdata1:
-<text>
+Niemals fehlende Wörter ergänzen.
 
-Haupttext1:
-<text>
+Niemals Datumsangaben erraten.
 
-Zusatzdata2:
-<text>
+Niemals Standardformulierungen ergänzen.
 
-Haupttext2:
-<text>
+Keine zusätzlichen Kommentare.
+Erfinde niemals etwas neues
 
-Do not add explanations.
-Do not change text.
+
+Dieses Bild enthält genau einen Sterberegistereintrag.
+
+Gib ausschließlich den sichtbaren Text zurück.
+
+Format:
+
+Haupttext:
+...
+
 """
+
 #MAX_WIDTH = 512
 RETRIES = 3
 RETRY_DELAY = 20  # Sekunden
@@ -50,24 +78,25 @@ MAX_RETRIES = 5
 BATCH_SIZE = 5
 BATCH_PAUSE = 60
 
+print("=== DEBUG START ===")
+print(f"BASE_DIR: {BASE_DIR}")
+print(f"PDF_PATH: {PDF_PATH}")
+print(f"Existiert PDF_PATH? {PDF_PATH.exists()}")
+
+try:
+    print(f"Inhalt von PDF_PATH: {list(PDF_PATH.glob('*'))}")
+except Exception as e:
+    print(f"Fehler beim Lesen von PDF_PATH: {e}")
+
+print("=== DEBUG ENDE ===")
 # ==============================
 # PDF → PNG
 # ==============================
+print("Starte PDF → PNG Konvertierung...")
 
+from pdf2image import convert_from_path, pdfinfo_from_path
 
-def pdf_to_png(pdf_path: Path, output_dir: Path):
-    output_dir.mkdir(parents=True, exist_ok=True)
-    pages = convert_from_path(str(pdf_path), dpi=150)  # DPI auf 150 reduzieren
-    image_paths = []
-    for i, page in enumerate(pages):
-        path = output_dir / f"{pdf_path.stem}_page_{i+1}.png"
-        page.convert("L").save(str(path), "PNG", compress_level=6)  # Graustufen + Kompression
-        resize_image(path, max_size=1200)  # Maximalgröße begrenzen
-        image_paths.append(path)
-    return image_paths
-
-
-def resize_image(image_path, max_size=1500):
+def resize_image(image_path, max_size=2000):
     img = Image.open(image_path)
 
     if img.width > max_size:
@@ -77,10 +106,8 @@ def resize_image(image_path, max_size=1500):
         img.save(image_path)
 
 # ==============================
-# PNG → Qwen3-VL
+# PNG → Gemini-VL
 # ==============================
-
-
 
 
 client = genai.Client(api_key="Deleted")
@@ -139,7 +166,21 @@ def send_to_gemini_with_retry(png_path):
 
     return None
 
+def enhance_image(img):
+    # 1. Graustufen (wichtig für OCR)
+    img = img.convert("L")
 
+    # 2. Kontrast erhöhen
+    img = ImageEnhance.Contrast(img).enhance(1.3)
+
+    # 3. Schärfen
+    img = ImageEnhance.Sharpness(img).enhance(1.3)
+
+    # 4. leichter zusätzlicher Sharpen-Filter
+    img = img.filter(ImageFilter.SHARPEN)
+
+    return img
+    
 def downscale_image(png_path, scale=0.75):
     img = Image.open(png_path)
 
@@ -153,43 +194,17 @@ def downscale_image(png_path, scale=0.75):
 import re
 
 def parse_ocr_output(text):
-    sections = {
-        "Zusatzdata1": "",
-        "Haupttext1": "",
-        "Zusatzdata2": "",
-        "Haupttext2": ""
-    }
 
-    current_key = None
-    # Suche nach den Keywords irgendwo in der Zeile, ignoriere Groß/Kleinschreibung und Sterne
-    keywords = ["Zusatzdata1", "Haupttext1", "Zusatzdata2", "Haupttext2"]
+    match = re.search(
+        r"Haupttext:\s*(.*)",
+        text,
+        flags=re.DOTALL | re.IGNORECASE
+    )
 
-    for line in text.splitlines():
-        clean_line = line.strip()
-        if not clean_line:
-            continue
+    if match:
+        return match.group(1).strip()
 
-        found_header = False
-        for key in keywords:
-            # Prüft, ob das Keyword (evtl. mit Sternchen drumherum) am Zeilenanfang steht
-            if re.match(rf'^\**{key}\**', clean_line, re.IGNORECASE):
-                current_key = key
-                found_header = True
-                
-                # Falls nach dem Header direkt Text kommt (z.B. "Haupttext1: Dies ist der Text")
-                # Entferne den Header-Teil aus der ersten Zeile
-                content_after_header = re.sub(rf'^\**{key}\**\s*:?\s*', '', clean_line, flags=re.IGNORECASE)
-                if content_after_header:
-                    sections[current_key] += content_after_header + "\n"
-                break
-        
-        if found_header:
-            continue
-
-        if current_key:
-            sections[current_key] += line + "\n"
-
-    return sections
+    return text.strip()
 
 
 def create_page_xml(sections, output_path):
@@ -209,69 +224,225 @@ def create_page_xml(sections, output_path):
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(pretty_xml)
+
+# ==============================
+# Dynamische horizontale und vertikale Trennlinie suchen
+# ==============================
+def find_vertical_separator(page_image):
+
+    gray = page_image.convert("L")
+    arr = np.array(gray)
+
+    dark_pixels = arr < 180
+
+    # Anzahl dunkler Pixel pro Spalte
+    col_scores = dark_pixels.sum(axis=0)
+
+    width = arr.shape[1]
+
+    start = int(width * 0.05)
+    end = int(width * 0.40)
+
+    search = col_scores[start:end]
+
+    separator_x = start + np.argmax(search)
+
+    print(f"Vertikale Trennlinie gefunden bei x={separator_x}")
+
+    return separator_x
+
+def find_horizontal_separator(main_text_img):
+
+    gray = main_text_img.convert("L")
+    arr = np.array(gray)
+
+    dark_pixels = arr < 180
+
+    row_scores = dark_pixels.sum(axis=1)
+
+    h = arr.shape[0]
+
+    start = int(h * 0.35)
+    end = int(h * 0.65)
+
+    search = row_scores[start:end]
+
+    separator_y = start + np.argmax(search)
+
+    print(f"Horizontale Trennlinie gefunden bei y={separator_y}")
+
+    return separator_y
+
+# ==============================
+# Dynamisches ROI Cropping
+# ==============================
+
+def crop_maintext_entries(page_image):
+
+    width, height = page_image.size
+
+    separator_x = find_vertical_separator(page_image)
+
+    padding_x = 20
+
+    # Nur rechte Haupttext-Spalte behalten
+    main_text = page_image.crop(
+        (
+            separator_x + padding_x,
+            0,
+            width,
+            height
+        )
+    )
+
+    separator_y = find_horizontal_separator(main_text)
+
+    padding_y = 20
+
+    top = main_text.crop(
+        (
+            0,
+            0,
+            main_text.width,
+            separator_y + padding_y
+        )
+    )
+
+    bottom = main_text.crop(
+        (
+            0,
+            separator_y - padding_y,
+            main_text.width,
+            main_text.height
+        )
+    )
+
+    return top, bottom
+
 # ==============================
 # HAUPTPROGRAMM
 # ==============================
-
 def main():
+    print(f"BASE_DIR: {BASE_DIR}")
+    print(f"PDF_PATH: {PDF_PATH}")
+
     pdf_files = list(PDF_PATH.glob("*.pdf"))
+
     if not pdf_files:
-        print("Keine PDFs im Input-Ordner gefunden.")
+        print("Keine PDFs gefunden.")
         return
 
-    # 🔹 Globale Stabilitäts-Parameter
     COOLDOWN_EVERY = 15
     COOLDOWN_SECONDS = 180
 
+    import gc
+    from pdf2image import pdfinfo_from_path
+
     for pdf in pdf_files:
+
         print(f"\n=== Verarbeite PDF: {pdf.name} ===")
 
-        # 🔹 PDF → PNG
         pdf_output_dir = OUTPUT_DIR / pdf.stem
         pdf_output_dir.mkdir(parents=True, exist_ok=True)
 
-        png_files = pdf_to_png(pdf, pdf_output_dir)
+        info = pdfinfo_from_path(str(pdf))
+        max_pages = info["Pages"]
 
-        page_counter = 0  # zählt über alle Batches hinweg
+        page_counter = 0
 
-        # 🔹 Batch-Verarbeitung
-        for batch_start in range(0, len(png_files), BATCH_SIZE):
+        for i in range(1, max_pages + 1):
 
-            batch = png_files[batch_start:batch_start + BATCH_SIZE]
-            print(f"\n=== Starte Batch {batch_start//BATCH_SIZE + 1} ===")
+            page_counter += 1
 
-            for png in batch:
-                page_counter += 1
+            print(f"\n--- Seite {i}/{max_pages} ---")
 
-                print(f"--- Sende {png.name} an Qwen ---")
-                print(f"Dateigröße: {png.stat().st_size} Bytes")
+            # Nur EINE Seite rendern
+            pages = convert_from_path(
+                str(pdf),
+                dpi=300,
+                first_page=i,
+                last_page=i
+            )
+            
+            page = pages[0]
+            
+            top, bottom = crop_maintext_entries(page)
+            
+            top = enhance_image(top)
+            bottom = enhance_image(bottom)
+            
+            png_top = pdf_output_dir / f"{pdf.stem}_page_{i}_top.png"
+            png_bottom = pdf_output_dir / f"{pdf.stem}_page_{i}_bottom.png"
+            
+            top.save(png_top, "PNG", compress_level=2)
+            bottom.save(png_bottom, "PNG", compress_level=2)
+            
+            resize_image(png_top, max_size=1400)
+            resize_image(png_bottom, max_size=1400)
+        
 
-                result = send_to_gemini_with_retry(png)
+            # Speicher freigeben
+            page.close()
+            del page
+            del pages
+            gc.collect()
 
-                if result:
-                    sections = parse_ocr_output(result)
-                    xml_output_path = pdf_output_dir / (png.stem + ".xml")
-                    create_page_xml(sections, xml_output_path)
-                    print(f"PAGE-XML gespeichert: {xml_output_path}")
-                    print(f"Antwort von Qwen: {result[:100]}...")
+            print(f"--- Sende Seite {i} an Qwen ---")
 
-                    # ✅ Mini-Pause nach erfolgreichem Request
-                    time.sleep(2)
+            result_top = send_to_gemini_with_retry(png_top)
+            result_bottom = send_to_gemini_with_retry(png_bottom)
+            if result_top or result_bottom:
+            
+                sections = {
+            
+                    "Haupttext1":
+                        parse_ocr_output(result_top)
+                        if result_top else "",
+            
+                    "Haupttext2":
+                        parse_ocr_output(result_bottom)
+                        if result_bottom else ""
+                }
+            
+                xml_output_path = (
+                    pdf_output_dir /
+                    f"{pdf.stem}_page_{i}.xml"
+                )
+            
+                create_page_xml(
+                    sections,
+                    xml_output_path
+                )
 
-                else:
-                    print(f"Fehler: {png.name} konnte nicht verarbeitet werden.")
-                    print("=== Fehler erkannt – 90 Sekunden Cooldown ===")
-                    time.sleep(90)
+                print(
+                    f"PAGE-XML gespeichert: "
+                    f"{xml_output_path}"
+                )
 
-                # 🔥 Globaler Cooldown alle X Seiten
-                if page_counter % COOLDOWN_EVERY == 0:
-                    print(f"\n=== Globaler Cooldown für {COOLDOWN_SECONDS} Sekunden ===\n")
-                    time.sleep(COOLDOWN_SECONDS)
+            else:
+                print(f"Fehler bei Seite {i}")
 
-            # 🔥 Pause nach jedem Batch (nur wenn noch Seiten übrig sind)
-            if batch_start + BATCH_SIZE < len(png_files):
-                print(f"\n=== Batch fertig – Pause {BATCH_PAUSE} Sekunden ===\n")
-                time.sleep(BATCH_PAUSE)
+            # PNG löschen
+            for p in [png_top, png_bottom]:
+                try:
+                    os.remove(p)
+                except:
+                    pass
+
+            time.sleep(2)
+
+            # Stabilitäts-Cooldown
+            if page_counter % COOLDOWN_EVERY == 0:
+
+                print(
+                    f"\n=== Cooldown "
+                    f"{COOLDOWN_SECONDS}s ===\n"
+                )
+
+                time.sleep(COOLDOWN_SECONDS)
+
+    print("\n=== Verarbeitung abgeschlossen ===")
+
 
 if __name__ == "__main__":
     main()
