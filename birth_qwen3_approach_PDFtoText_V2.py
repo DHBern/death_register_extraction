@@ -19,8 +19,8 @@ print("SCRIPT STARTET")
 # ==============================
 BASE_DIR = Path.cwd()
 
-PDF_PATH = BASE_DIR / "input"
-OUTPUT_DIR = BASE_DIR / "output"
+PDF_PATH = BASE_DIR / "birth_input"
+OUTPUT_DIR = BASE_DIR / "birth_output"
 LOG_DIR = BASE_DIR / "logs"
 
 
